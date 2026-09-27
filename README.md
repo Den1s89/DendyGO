@@ -8,9 +8,6 @@ LittleFS in the internal flash (no microSD card needed), the frame goes to an ST
 display, sound goes to a MAX98357 I2S DAC, and the buttons are read through an SX1509 I/O
 expander.
 
-<img width="2000" height="1500" alt="Console4" src="https://github.com/user-attachments/assets/20bb1ddf-df41-40c9-8c97-a9a184cbbc5c" />
-
-
 > The firmware, its on-screen text and its diagnostic log lines are in Russian; this file
 > is the English documentation (the Russian original is [`README_RU.md`](README_RU.md)).
 > The deep-dive document [`docs/TECH_NOTES.md`](docs/TECH_NOTES.md) is in Russian as well.
@@ -29,7 +26,12 @@ expander.
 * Accuracy tests (nestest, blargg) have not been run yet — compatibility was verified on
   games and against documented behaviour (reference: a real console / Dendy).
 
-  ![Uploading IMG_20260914_022457.jpg…]()
+## 🛠 3D Printed Case & Enclosure
+The official, custom-designed 3D printable case for the **DendyGO** console is available on MakerWorld.
+
+* **Get the 3D models here:** [DendyGO 3D Printable Case on MakerWorld](https://makerworld.com/en/models/3354561-dendygo-esp32-s3-game-console#profileId-3813213)
+
+<img width="2000" height="1500" alt="Console4" src="https://github.com/user-attachments/assets/20bb1ddf-df41-40c9-8c97-a9a184cbbc5c" />
 
 ## Contents
 
