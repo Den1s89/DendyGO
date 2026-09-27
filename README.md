@@ -11,10 +11,9 @@ expander.
 > is the English documentation (the Russian original is [`README_RU.md`](README_RU.md)).
 > The deep-dive document [`docs/TECH_NOTES.md`](docs/TECH_NOTES.md) is in Russian as well.
 
-* **Video:** ST7789 240×320 (320×240 landscape), RGB565, SPI (120 MHz in this build),
+* **Video:** 2" ST7789 240×320 (320×240 landscape), RGB565, SPI (120 MHz in this build),
   frame transfer without DMA.
-* **Audio:** 44 100 Hz, 16 bit, ring buffer + a separate I2S task; you can test the whole
-  audio path without a ROM — press **TURBO B** in the menu.
+* **Audio:** 44 100 Hz, 16 bit, ring buffer + a separate I2S task.
 * **TV region:** NTSC 60 Hz / PAL 50 Hz — AUTO from the ROM header or forced manually
   (a button in the menu); volume and TV mode are stored in LittleFS.
 * **Mappers:** 0 (NROM, including NROM-128), 1 (MMC1), 2 (UxROM), 3 (CNROM), 4 (MMC3),
