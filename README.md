@@ -1,10 +1,15 @@
 # DendyGO 1.0 — NES/Dendy on ESP32-S3 (N16R8) + ST7789 + MAX98357
 
+<img width="2000" height="1500" alt="Consol3" src="https://github.com/user-attachments/assets/88b0bcd7-e1c9-4000-818c-3164782d0da6" />
+
 A handheld NES/Dendy emulator: the core (6502 CPU + 2C02 PPU + 2A03 APU + mappers) is
 written **from scratch**, no third-party emulator code was used. ROMs (`.nes`) live in
 LittleFS in the internal flash (no microSD card needed), the frame goes to an ST7789 SPI
 display, sound goes to a MAX98357 I2S DAC, and the buttons are read through an SX1509 I/O
 expander.
+
+<img width="2000" height="1500" alt="Console4" src="https://github.com/user-attachments/assets/20bb1ddf-df41-40c9-8c97-a9a184cbbc5c" />
+
 
 > The firmware, its on-screen text and its diagnostic log lines are in Russian; this file
 > is the English documentation (the Russian original is [`README_RU.md`](README_RU.md)).
@@ -23,6 +28,8 @@ expander.
   order, auto-start of a single ROM.
 * Accuracy tests (nestest, blargg) have not been run yet — compatibility was verified on
   games and against documented behaviour (reference: a real console / Dendy).
+
+  ![Uploading IMG_20260914_022457.jpg…]()
 
 ## Contents
 
