@@ -381,9 +381,7 @@ that this README stays short:
 
 ## License
 
-The project has no `LICENSE` file yet. Before publishing it is worth picking a license:
-**MIT** (like the libraries used here) or **GPL-3.0** if you want derived firmware to stay
-open as well.
+This project is licensed under the **MIT License**
 
 ## Credits and sources
 
