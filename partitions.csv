@@ -1,0 +1,19 @@
+# DendyGO — таблица разделов для ESP32-S3 N16R8 (16 МБ flash).
+#
+# Файл partitions.csv в ПАПКЕ СКЕТЧА подхватывается Arduino IDE автоматически
+# (см. platform.txt: recipe.hooks.prebuild.1.pattern) и имеет приоритет над
+# схемой разделов, выбранной в меню "Partition Scheme".
+#
+# Раскладка: 3 МБ под приложение + ~9.9 МБ LittleFS под ромы.
+# ВАЖНО: раздел LittleFS обязан называться "spiffs" и иметь подтип "spiffs",
+# иначе LittleFS.begin() (метка по умолчанию — "spiffs") его не найдёт.
+# Смещение раздела spiffs = 0x610000 — сюда же пишется образ LittleFS
+# (см. README.md, "Как залить ромы").
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x5000,
+otadata,    data, ota,      0xe000,   0x2000,
+app0,       app,  ota_0,    0x10000,  0x300000,
+app1,       app,  ota_1,    0x310000, 0x300000,
+spiffs,     data, spiffs,   0x610000, 0x9E0000,
+coredump,   data, coredump, 0xFF0000, 0x10000,
