@@ -1,195 +1,202 @@
-# DendyGO 1.0 — NES/Dendy на ESP32-S3 (N16R8) + ST7789 + MAX98357
+# DendyGO 1.0 — NES/Dendy on ESP32-S3 (N16R8) + ST7789 + MAX98357
 
-Портативный эмулятор NES/Dendy: ядро (CPU 6502 + PPU 2C02 + APU 2A03 + мапперы)
-написано **с нуля**, сторонний код эмулятора не использовался. Ромы (`.nes`) лежат в
-LittleFS во внутренней флеш-памяти (microSD не нужна), кадр выводится на SPI-дисплей
-ST7789, звук — на I2S-кодек MAX98357, кнопки читаются через расширитель SX1509.
+A handheld NES/Dendy emulator: the core (6502 CPU + 2C02 PPU + 2A03 APU + mappers) is
+written **from scratch**, no third-party emulator code was used. ROMs (`.nes`) live in
+LittleFS in the internal flash (no microSD card needed), the frame goes to an ST7789 SPI
+display, sound goes to a MAX98357 I2S DAC, and the buttons are read through an SX1509 I/O
+expander.
 
-* **Видео:** ST7789 240×320 (альбом 320×240), RGB565, SPI (в этой сборке 120 МГц),
-  передача кадра без DMA.
-* **Звук:** 44 100 Гц, 16 бит, кольцевой буфер + отдельная задача I2S; тест тракта без
-  рома — **TURBO B** в меню.
-* **Регион ТВ:** NTSC 60 Гц / PAL 50 Гц — AUTO по заголовку рома или принудительно
-  (кнопка в меню); громкость и режим ТВ сохраняются в LittleFS.
-* **Мапперы:** 0 (NROM, включая NROM-128), 1 (MMC1), 2 (UxROM), 3 (CNROM), 4 (MMC3),
-  7 (AxROM), 11 (Color Dreams), 23 (VRC2b), 66 (GxROM), 71 (Camerica). Ромы с другими
-  мапперами в меню видны, но при запуске ядро их отклоняет: `Load error`.
-* **Меню:** список ромов из LittleFS (до 64 файлов), OSD яркости/громкости/порядка
-  цветов, автозапуск единственного рома.
-* Тесты точности (nestest, blargg) пока не прогонялись — совместимость проверялась на
-  играх и на описаниях поведения (эталон — живая приставка/Dendy).
+> The firmware, its on-screen text and its diagnostic log lines are in Russian; this file
+> is the English documentation (the Russian original is [`README_RU.md`](README_RU.md)).
+> The deep-dive document [`docs/TECH_NOTES.md`](docs/TECH_NOTES.md) is in Russian as well.
 
-## Содержание
+* **Video:** ST7789 240×320 (320×240 landscape), RGB565, SPI (120 MHz in this build),
+  frame transfer without DMA.
+* **Audio:** 44 100 Hz, 16 bit, ring buffer + a separate I2S task; you can test the whole
+  audio path without a ROM — press **TURBO B** in the menu.
+* **TV region:** NTSC 60 Hz / PAL 50 Hz — AUTO from the ROM header or forced manually
+  (a button in the menu); volume and TV mode are stored in LittleFS.
+* **Mappers:** 0 (NROM, including NROM-128), 1 (MMC1), 2 (UxROM), 3 (CNROM), 4 (MMC3),
+  7 (AxROM), 11 (Color Dreams), 23 (VRC2b), 66 (GxROM), 71 (Camerica). ROMs with other
+  mappers are listed in the menu, but the core rejects them at launch: `Load error`.
+* **Menu:** ROM list from LittleFS (up to 64 files), OSD for brightness/volume/color
+  order, auto-start of a single ROM.
+* Accuracy tests (nestest, blargg) have not been run yet — compatibility was verified on
+  games and against documented behaviour (reference: a real console / Dendy).
 
-1. [Состав проекта](#состав-проекта)
-2. [Что нужно установить](#что-нужно-установить)
-3. [Настройки платы](#настройки-платы-инструменты)
-4. [Распиновка и подключение](#распиновка-и-подключение)
-5. [Управление](#управление)
-6. [Яркость, громкость, регион ТВ](#яркость-громкость-регион-тв)
-7. [Как залить ромы](#как-залить-ромы)
-8. [Сборка](#сборка)
-9. [Диагностика (кратко)](#диагностика-кратко)
-10. [Технические заметки](#технические-заметки)
-11. [Лицензия](#лицензия)
-12. [Благодарности и источники](#благодарности-и-источники)
+## Contents
 
-## Состав проекта
+1. [Project layout](#project-layout)
+2. [What to install](#what-to-install)
+3. [Board settings (Tools)](#board-settings-tools)
+4. [Pinout and wiring](#pinout-and-wiring)
+5. [Controls](#controls)
+6. [Brightness, volume, TV region](#brightness-volume-tv-region)
+7. [How to upload ROMs](#how-to-upload-roms)
+8. [Building](#building)
+9. [Troubleshooting (short)](#troubleshooting-short)
+10. [Technical notes](#technical-notes)
+11. [License](#license)
+12. [Credits and sources](#credits-and-sources)
 
-| Файл | Назначение |
+## Project layout
+
+| File | Purpose |
 |---|---|
-| `DendyGO.ino` | скетч: дисплей, звук, кнопки, меню, OSD, `setup()`/`loop()` |
-| `NesCore.h/.cpp` | ядро эмулятора: шина, картридж, кадр, звук, публичный API |
-| `NesCpu.h/.cpp` | CPU 6502 (все неофициальные коды) |
-| `NesPpu.h/.cpp` | PPU 2C02: фон и спрайты, sprite-0 hit, NMI |
-| `NesApu.h/.cpp` | APU: пульсы (со sweep), треугольник, шум, DMC, микширование |
-| `NesMapper.h/.cpp` | мапперы 0, 1, 2, 3, 4, 7, 11, 23, 66, 71 |
-| `DendyConfig.h` | **единственное место** для пинов и настроек |
-| `DendyFast.h` | `-O3` для горячих файлов ядра и `IRAM_ATTR` для горячих функций |
-| `LcdTest.ino` | тест вывода на LCD без эмулятора (`DENDY_LCD_TEST 1`) |
-| `partitions.csv` | разделы: 3 МБ приложение + 9.9 МБ LittleFS под ромы |
-| `upload_fs.ps1` | скрипт: проверить имена ромов, собрать `littlefs.bin`, залить в плату |
-| `data/roms/*.nes` | ВАШИ ромы (имена — до 32 символов). В репозитории ромов нет |
+| `DendyGO.ino` | sketch: display, audio, buttons, menu, OSD, `setup()`/`loop()` |
+| `NesCore.h/.cpp` | emulator core: bus, cartridge, frame, audio, public API |
+| `NesCpu.h/.cpp` | 6502 CPU (all unofficial opcodes) |
+| `NesPpu.h/.cpp` | 2C02 PPU: background and sprites, sprite-0 hit, NMI |
+| `NesApu.h/.cpp` | APU: pulses (with sweep), triangle, noise, DMC, mixing |
+| `NesMapper.h/.cpp` | mappers 0, 1, 2, 3, 4, 7, 11, 23, 66, 71 |
+| `DendyConfig.h` | the **single place** for pins and settings |
+| `DendyFast.h` | `-O3` for the hot core files and `IRAM_ATTR` for hot functions |
+| `LcdTest.ino` | LCD output test without the emulator (`DENDY_LCD_TEST 1`) |
+| `partitions.csv` | partitions: 3 MB application + 9.9 MB LittleFS for ROMs |
+| `upload_fs.ps1` | script: validate ROM names, build `littlefs.bin`, flash it |
+| `data/roms/*.nes` | YOUR ROMs (names up to 32 characters). No ROMs in the repository |
+| `README.md` / `README_RU.md` | this documentation: English / Russian |
 
-> В репозиторий не попадают (см. `.gitignore`) ромы `data/roms/*.nes` и собранный
-> `littlefs.bin`: образ за секунды делает `upload_fs.ps1` из папки `data/`.
+> Not committed (see `.gitignore`): ROMs `data/roms/*.nes` and the generated
+> `littlefs.bin` — `upload_fs.ps1` builds that image from the `data/` folder in seconds.
 
-## Что нужно установить
+## What to install
 
-1. **Arduino IDE 2.x** + ядро **esp32 by Espressif** (проверено на 3.3.0, нужно ≥ 3.0).
-2. Библиотеки через «Управление библиотеками»:
-   * **LovyanGFX** (автор lovyan03);
-   * **SparkFun SX1509 I/O Expander** (автор SparkFun Electronics).
-3. **USB-C кабель** с передачей данных.
+1. **Arduino IDE 2.x** + the **esp32 by Espressif** core (tested on 3.3.0, ≥ 3.0 needed).
+2. Libraries via "Manage Libraries":
+   * **LovyanGFX** (by lovyan03);
+   * **SparkFun SX1509 I/O Expander** (by SparkFun Electronics).
+3. A **USB-C cable** that supports data transfer.
 
-## Настройки платы (Инструменты)
+## Board settings (Tools)
 
-| Параметр | Значение |
+| Setting | Value |
 |---|---|
 | Board | **ESP32S3 Dev Module** |
-| USB CDC On Boot | **Enabled** (иначе `Serial` пишет в UART0, а не в USB-порт) |
+| USB CDC On Boot | **Enabled** (otherwise `Serial` writes to UART0, not to the USB port) |
 | CPU Frequency | 240 MHz |
-| Debug Level / Core Debug Level | **None** (с `Debug`/`Verbose` ядро и скетч собираются с `-Og` — эмулятор замедляется в разы) |
+| Debug Level / Core Debug Level | **None** (with `Debug`/`Verbose` the core and the sketch are built with `-Og`, which makes the emulator several times slower) |
 | Flash Mode / Size | QIO 80 MHz / **16MB (128Mb)** |
-| PSRAM | **OPI PSRAM** (у модуля N16R8 PSRAM подключена по OPI!) |
+| PSRAM | **OPI PSRAM** (on an N16R8 module the PSRAM is wired as OPI!) |
 | Partition Scheme | **16M Flash (3MB APP/9.9MB FATFS)** |
 | Upload Speed | 921600 |
 | Arduino/Events Run On | Core 1 |
 | Erase All Flash | Disabled |
 
-> `partitions.csv` из папки скетча **перекрывает** схему из меню: приложение получает
-> 3 МБ, а раздел данных — 9.9 МБ **LittleFS** (в схеме из меню там FATFS, для нас
-> бесполезный). «Partition Scheme» выбирается только чтобы проверка размера скетча
-> не ругалась.
+> The `partitions.csv` from the sketch folder **overrides** the scheme from the menu: the
+> application gets 3 MB and the data partition becomes 9.9 MB of **LittleFS** (the menu
+> scheme puts FATFS there, which is useless for us). "Partition Scheme" is only selected so
+> that the sketch size check does not complain.
 
-## Распиновка и подключение
+## Pinout and wiring
 
-Плата — **ESP32-S3 N16R8** (16 МБ flash, 8 МБ Octal-PSRAM). GPIO33…GPIO37 использовать
-**нельзя** — они заняты PSRAM (в `DendyConfig.h` это защищено `static_assert`).
+The board is an **ESP32-S3 N16R8** (16 MB flash, 8 MB Octal-PSRAM). GPIO33…GPIO37 **must
+not** be used — they are taken by the PSRAM (in `DendyConfig.h` this is enforced by a
+`static_assert`).
 
-| Узел | Контакт | GPIO |
+| Part | Pin | GPIO |
 |---|---|---|
 | ST7789 | SCLK (SCL) | 11 |
 | ST7789 | MOSI (SDA) | 12 |
 | ST7789 | CS | 10 |
 | ST7789 | DC | 13 |
 | ST7789 | RST / RES | 14 |
-| ST7789 | BLK (подсветка) | 21 |
+| ST7789 | BLK (backlight) | 21 |
 | MAX98357 | BCLK (BCK) | 16 |
 | MAX98357 | LRCK (WS) | 15 |
 | MAX98357 | DIN (DOUT) | 17 |
-| MAX98357 | SD (shutdown/mode) | **не на GND!** в воздухе либо через 1 МОм к VIN |
+| MAX98357 | SD (shutdown/mode) | **not to GND!** floating or via 1 MΩ to VIN |
 | SX1509 | SDA | 8 |
 | SX1509 | SCL | 9 |
 | SX1509 | INT | 3 (`INPUT_PULLUP`, FALLING) |
-| SX1509 | A0, A1 | GND (адрес `0x3E`) |
-| Питание | VIN платы | 5 В (дисплей/кодек), 3.3 В для SX1509 |
+| SX1509 | A0, A1 | GND (address `0x3E`) |
+| Power | board VIN | 5 V (display/DAC), 3.3 V for the SX1509 |
 
-Кнопки подключаются между выводом SX1509 и GND (активный уровень LOW, подтяжки
-включает прошивка, аппаратный антидребезг 8 мс):
+Buttons are wired between an SX1509 pin and GND (active LOW, the pull-ups are enabled by
+the firmware, 8 ms hardware debounce):
 
-| Вывод SX1509 | Кнопка |
+| SX1509 pin | Button |
 |---|---|
-| 0 | Вправо |
-| 1 | Вниз |
-| 2 | Вверх |
-| 3 | Влево |
-| 4 | REGION — выбор ТВ (AUTO / NTSC / PAL), только в меню |
-| 5 | Громкость «−» (с авто-повтором при удержании) |
-| 6 | Громкость «+» (с авто-повтором при удержании) |
-| 7 | MENU (короткое — Reset игры, удержание — выход в меню) |
-| 8 | ЯРКОСТЬ экрана (5 / 15 / 25 / 50 / 75 / 100 %, при включении 70 %) |
-| 9 | Turbo A (авто-повтор ~15 Гц) |
-| 10 | Turbo B (авто-повтор ~15 Гц) |
+| 0 | Right |
+| 1 | Down |
+| 2 | Up |
+| 3 | Left |
+| 4 | REGION — TV selection (AUTO / NTSC / PAL), menu only |
+| 5 | Volume "−" (auto-repeat while held) |
+| 6 | Volume "+" (auto-repeat while held) |
+| 7 | MENU (short press — reset the game, hold — back to the menu) |
+| 8 | Screen BRIGHTNESS (5 / 15 / 25 / 50 / 75 / 100 %, 70 % at power-up) |
+| 9 | Turbo A (auto-repeat ~15 Hz) |
+| 10 | Turbo B (auto-repeat ~15 Hz) |
 | 11 | A |
 | 12 | B |
 | 13 | Select |
 | 14 | Start |
-| 15 | свободен |
+| 15 | free |
 
-В `DendyConfig.h` (блок 4) тот же набор записан **по функциям** (`SX_PIN_A`, `SX_PIN_B`,
-`SX_PIN_UP`, `SX_PIN_VOL_DOWN`, `SX_PIN_BRIGHT`, …); один и тот же вывод не может
-обслуживать две кнопки — раскладку проверяет `static_assert`, сборка упадёт до заливки.
+In `DendyConfig.h` (block 4) the same set is declared **by function** (`SX_PIN_A`,
+`SX_PIN_B`, `SX_PIN_UP`, `SX_PIN_VOL_DOWN`, `SX_PIN_BRIGHT`, …); one pin cannot serve two
+buttons — the layout is checked by a `static_assert`, so the build fails before flashing.
 
-### Что важно при монтаже
+### Wiring gotchas
 
-* **MAX98357, вывод SD.** Напряжение на SD задаёт режим: `< 0.16 В` — усилитель
-  **выключен** (полная тишина при полностью исправной прошивке!), `0.16…0.77 В` —
-  (L+R)/2, `0.77…1.4 В` — правый канал, `> 1.4 В` — левый. Внутри чипа SD подтянут к
-  земле на 100 кОм, поэтому «оставить в воздухе» правильно только на платах с внешней
-  подтяжкой 1 МОм к VIN (например, Adafruit #3006). Если подтяжки нет — поставьте
-  1 МОм между SD и VIN. Быстрая проверка мультиметром: между SD и GND должно быть
-  больше 0.16 В. Динамик подключается **только между `+` и `−`** (мостовая схема BTL):
-  второй провод на GND — звука не будет. `GAIN` в воздухе = 9 дБ, 100 кОм на GND = 15 дБ.
-* **Подсветка** ST7789 (BLK) на GPIO21 управляется ШИМ, поэтому яркость меняется «на
-  ходу» — без переинициализации дисплея и без мигания.
-* **SDA/SCL SX1509 можно перепутать** — при старте включается автоподбор
-  (`SX1509_AUTO_SWAP_PINS`): перебираются оба порядка пинов и 400/100 кГц, в мониторе
-  появляется строка с предупреждением и фактическими пинами.
-* **Подтяжки кнопок** включает сама прошивка (`io.pinMode(pin, INPUT_PULLUP)`) — при
-  обычном `INPUT` входы «плавают» и все кнопки читаются как нажатые.
-* Все земли (плата, дисплей, кодек, расширитель) соединить вместе; питание — USB-C.
-  GPIO0 (кнопка BOOT) задействован только тестом дисплея.
+* **MAX98357, the SD pin.** The voltage on SD selects the mode: `< 0.16 V` — the amplifier
+  is **off** (total silence with perfectly working firmware!), `0.16…0.77 V` — (L+R)/2,
+  `0.77…1.4 V` — right channel, `> 1.4 V` — left. Inside the chip SD is pulled to ground
+  through 100 kΩ, so "leave it floating" is only correct on boards that have an external
+  1 MΩ pull-up to VIN (for example Adafruit #3006). If there is no such pull-up, add 1 MΩ
+  between SD and VIN. A quick multimeter check: SD to GND must read more than 0.16 V. The
+  speaker is connected **only between `+` and `−`** (BTL bridge output): a second wire to
+  GND gives no sound. `GAIN` floating = 9 dB, 100 kΩ to GND = 15 dB.
+* **Backlight.** The ST7789 BLK pin on GPIO21 is driven by PWM, so brightness changes on
+  the fly — without re-initialising the display and without flicker.
+* **SDA/SCL of the SX1509 may be swapped** — at startup auto-detection runs
+  (`SX1509_AUTO_SWAP_PINS`): both pin orders and 400/100 kHz are tried, and a warning line
+  with the actual pins appears in the serial monitor.
+* **Button pull-ups** are enabled by the firmware itself (`io.pinMode(pin, INPUT_PULLUP)`) —
+  with plain `INPUT` the inputs float and every button reads as pressed.
+* Tie all grounds together (board, display, DAC, expander); power comes from USB-C.
+  GPIO0 (the BOOT button) is only used by the display test.
 
-## Управление
+## Controls
 
-| Действие | Кнопки |
+| Action | Buttons |
 |---|---|
-| Игра | A, B, Select, Start, крестовина |
-| Турбо A / B | Turbo A / Turbo B (повтор ~15 Гц, пока кнопка удерживается) |
-| Сброс игры | короткое нажатие **MENU** (< 400 мс) |
-| Выход в меню выбора рома | удержание **MENU** (≥ 400 мс) |
-| Громкость | вывод 6 («+») / вывод 5 («−»), шаг 5, авто-повтор, OSD-полоса |
-| Меню: переход по списку | Вверх / Вниз (с авто-повтором) |
-| Меню: листать страницами | Влево / Вправо |
-| Меню: запустить ром | **A** или **START** |
-| Меню: перечитать ромы из LittleFS | **MENU** |
-| Меню: тест звука (лестница 220/440/880 Гц) | **TURBO B** |
-| Порядок цветов кадра (`DENDY_COLOR_ORDER`) | **SELECT + Влево / Вправо** (по кругу 0→1→2→3) |
+| Play | A, B, Select, Start, D-pad |
+| Turbo A / B | Turbo A / Turbo B (repeat ~15 Hz while the button is held) |
+| Reset the game | short press of **MENU** (< 400 ms) |
+| Back to the ROM menu | hold **MENU** (≥ 400 ms) |
+| Volume | pin 6 ("+") / pin 5 ("−"), step 5, auto-repeat, OSD bar |
+| Menu: move through the list | Up / Down (with auto-repeat) |
+| Menu: page through the list | Left / Right |
+| Menu: launch a ROM | **A** or **START** |
+| Menu: re-scan the ROMs in LittleFS | **MENU** |
+| Menu: audio test (220/440/880 Hz stair) | **TURBO B** |
+| Frame color order (`DENDY_COLOR_ORDER`) | **SELECT + Left / Right** (cycles 0→1→2→3) |
 
-## Яркость, громкость, регион ТВ
+## Brightness, volume, TV region
 
-* **Яркость** — кнопка на выводе 8 SX1509 (`SX_PIN_BRIGHT`), работает и в игре, и в
-  меню: по кругу `5 → 15 → 25 → 50 → 75 → 100 % → 5 …`; при включении 70 %
-  (`DISPLAY_BR_DEFAULT_PCT`). Значение видно в OSD («YARK 75 %») и в шапке меню, нигде
-  не сохраняется.
-* **Громкость** — кнопки 5/6, шаг 5; значение сохраняется в LittleFS (`/volume.bin`).
-* **Регион ТВ** — кнопка на выводе 4 (`SX_PIN_REGION`), только в меню:
-  `AUTO → NTSC → PAL`. В AUTO регион берётся из заголовка `.nes` (байт 9, бит 0; для
-  NES 2.0 — байт 12), если признака нет — NTSC. Выбор сохраняется (`/region.bin`) и
-  применяется при запуске рома: 60,000 кадра/с в NTSC и 50,000 в PAL. PAL-ром в
-  NTSC-режиме идёт примерно на 20 % быстрее и звучит выше на ~3 полутона (и наоборот) —
-  это свойство оригинала, а не эмулятора.
+* **Brightness** — the button on SX1509 pin 8 (`SX_PIN_BRIGHT`), works both in a game and
+  in the menu: it cycles `5 → 15 → 25 → 50 → 75 → 100 % → 5 …`; it starts at 70 %
+  (`DISPLAY_BR_DEFAULT_PCT`). The value is shown in the OSD ("YARK 75 %") and in the menu
+  header, and is not stored anywhere.
+* **Volume** — buttons 5/6, step 5; the value is stored in LittleFS (`/volume.bin`).
+* **TV region** — the button on pin 4 (`SX_PIN_REGION`), menu only:
+  `AUTO → NTSC → PAL`. In AUTO the region comes from the `.nes` header (byte 9, bit 0;
+  for NES 2.0 — byte 12); if there is no such flag, NTSC is used. The choice is stored
+  (`/region.bin`) and applied when a ROM starts: 60.000 fps in NTSC and 50.000 in PAL.
+  A PAL ROM in NTSC mode runs about 20 % faster and sounds ~3 semitones higher (and vice
+  versa) — that is a property of the original hardware, not of the emulator.
 
-## Как залить ромы
+## How to upload ROMs
 
-Ромы ищутся в папке **`/roms`** внутри LittleFS, файлы — **`*.nes`** (регистр
-расширения не важен). Создайте рядом с `DendyGO.ino` папку `data/roms` и положите туда
-образы:
+ROMs are searched for in the **`/roms`** folder inside LittleFS, files are **`*.nes`**
+(the case of the extension does not matter). Create a `data/roms` folder next to
+`DendyGO.ino` and put the images there:
 
-> Ограничения прошивки: до `ROM_MAX_FILES` = 64 ромов в меню, до `ROM_MAX_SIZE` = 5 МБ
-> на ром, в меню имя обрезается до `ROM_NAME_LEN` = 40 символов. Отдельный лимит —
-> 32 символа на имя файла в LittleFS (разбор в конце раздела).
+> Firmware limits: up to `ROM_MAX_FILES` = 64 ROMs in the menu, up to `ROM_MAX_SIZE` = 5 MB
+> per ROM, names are truncated to `ROM_NAME_LEN` = 40 characters in the menu. A separate
+> limit is 32 characters per file name in LittleFS (see the end of this section).
 
 ```text
 DendyGO/
@@ -203,19 +210,22 @@ DendyGO/
       └─ Super Mario Bros (U).nes
 ```
 
-### Способ 0 (проще всего): скрипт `upload_fs.ps1` из этого проекта
+### Option 0 (the easiest): the `upload_fs.ps1` script from this project
 
-Закройте **монитор порта** в Arduino IDE (иначе порт занят) и выполните из папки скетча:
+Close the **serial monitor** in the Arduino IDE (otherwise the port is busy) and run this
+from the sketch folder:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\upload_fs.ps1           # собрать + залить
-powershell -ExecutionPolicy Bypass -File .\upload_fs.ps1 -NoFlash  # только собрать образ
+powershell -ExecutionPolicy Bypass -File .\upload_fs.ps1           # build + flash
+powershell -ExecutionPolicy Bypass -File .\upload_fs.ps1 -NoFlash  # build the image only
 powershell -ExecutionPolicy Bypass -File .\upload_fs.ps1 -Port COM4
 ```
 
-Скрипт сам находит `mklittlefs.exe`/`esptool.exe` в ядре esp32, проверяет, что все
-имена короче 32 символов, берёт адрес и размер раздела `spiffs` из `partitions.csv`,
-собирает `littlefs.bin`, печатает содержимое и заливает в плату:
+The script finds `mklittlefs.exe`/`esptool.exe` in the esp32 core by itself, checks that
+every name is shorter than 32 characters, takes the address and the size of the `spiffs`
+partition from `partitions.csv`, builds `littlefs.bin`, prints its contents and flashes it
+into the board. This is the real output of the script (its messages are in Russian, as is
+the whole script — see [`README_RU.md`](README_RU.md)):
 
 ```text
 рома(ов) в data\roms: 4
@@ -227,69 +237,73 @@ powershell -ExecutionPolicy Bypass -File .\upload_fs.ps1 -Port COM4
 Готово: образ LittleFS залит в COM4. Нажмите RST — в меню появится список ромов.
 ```
 
-### Способ 1 (вручную): `mklittlefs` + `esptool`
+### Option 1 (manual): `mklittlefs` + `esptool`
 
-Оба инструмента уже есть в пакете ядра esp32 (номера версий в путях подставьте свои):
+Both tools already ship with the esp32 core (adjust the version numbers in the paths to
+your own):
 
 ```powershell
 $mk  = "$env:LOCALAPPDATA\Arduino15\packages\esp32\tools\mklittlefs\3.0.0-gnu12-dc7f933\mklittlefs.exe"
 $esp = "$env:LOCALAPPDATA\Arduino15\packages\esp32\tools\esptool_py\5.0.0\esptool.exe"
 
-# 1) собрать образ LittleFS из папки data (10354688 = 0x9E0000 — размер раздела spiffs)
+# 1) build the LittleFS image from the data folder (10354688 = 0x9E0000 = the spiffs partition size)
 & $mk -c data -p 256 -b 4096 -s 10354688 littlefs.bin
 
-# 2) залить образ в раздел spiffs по адресу 0x610000 (COM5 — ваш порт)
+# 2) flash the image into the spiffs partition at 0x610000 (COM5 is your port)
 & $esp --chip esp32s3 --port COM5 --baud 921600 write-flash 0x610000 littlefs.bin
 ```
 
-Проверить содержимое готового образа (у `-l` нужны те же параметры, иначе утилита
-падает с `Assertion failed`):
+To check the contents of the generated image (with `-l` you need the same parameters,
+otherwise the tool dies with `Assertion failed`):
 
 ```powershell
 & $mk -l -p 256 -b 4096 -s 10354688 littlefs.bin
 ```
 
-Этой же командой обновляют только ромы — без перепрошивки скетча (занимает секунды).
-Адрес `0x610000` и размер `10354688` взяты из `partitions.csv`; при своей таблице
-разделов считайте их по столбцам `Offset`/`Size`. Плагин IDE «ESP32 LittleFS Data
-Upload» (`arduino-esp32littlefs-plugin`) и PlatformIO (`pio run -t uploadfs` при
-`board_build.filesystem = littlefs`) делают то же самое.
+The same command updates the ROMs only — without re-flashing the sketch (it takes
+seconds). The address `0x610000` and the size `10354688` come from `partitions.csv`; with
+your own partition table compute them from the `Offset`/`Size` columns. The IDE plugin
+"ESP32 LittleFS Data Upload" (`arduino-esp32littlefs-plugin`) and PlatformIO
+(`pio run -t uploadfs` with `board_build.filesystem = littlefs`) do exactly the same.
 
-### Ограничения и проверка
+### Limits and verification
 
-> ⚠ **Имена файлов ромов — не длиннее 32 символов вместе с `.nes`.** `mklittlefs` на
-> более длинном имени обрывается с `unable to open '/roms/...'` + `error adding file!`,
-> и в LittleFS **не попадает вообще ничего** — в меню остаётся `net fajlov`. Пример:
-> `Hudson's Adventure Island III (U) [!].nes` (37 символов) — ошибка,
-> `Adventure Island III (U) [!].nes` (32) — собирается нормально.
+> ⚠ **ROM file names must not be longer than 32 characters including `.nes`.** With a
+> longer name `mklittlefs` aborts with `unable to open '/roms/...'` + `error adding file!`,
+> and **nothing at all** ends up in LittleFS — the menu keeps showing `net fajlov`
+> (transliterated "no files"). Example:
+> `Hudson's Adventure Island III (U) [!].nes` (37 characters) — error,
+> `Adventure Island III (U) [!].nes` (32) — builds fine.
 
-### После заливки
+### After flashing
 
-Нажмите RST: в Serial (115200) будет список найденных ромов, на дисплее — меню.
-Если ром один и меню не нужно, `ROM_AUTORUN_SINGLE 1` в `DendyConfig.h` запускает его
-сразу.
+Press RST: Serial (115200) prints the list of ROMs found while the display shows the menu.
+If there is only one ROM and you do not need the menu, `ROM_AUTORUN_SINGLE 1` in
+`DendyConfig.h` launches it right away.
 
-В меню «net fajlov» — ромов не найдено? Проверяйте по порядку:
+The menu shows `net fajlov` — no ROMs found? Check in order:
 
-1. **Образ LittleFS вообще залит?** Папка `data/` на компьютере — только заготовка:
-   **загрузка скетча (Ctrl+U) образ не заливает**. Признак незалитого образа в логе:
-   `[FS] /: файлов 0, каталогов 0` и `[FS] /roms — каталог не найден`.
-2. **Сборка образа не оборвалась на длинном имени?** В выводе `mklittlefs` не должно
-   быть `error adding file!` (лимит 32 символа).
-3. **Что реально в образе:** `& $mk -l -p 256 -b 4096 -s 10354688 littlefs.bin` —
-   там должны быть строки `/roms/...nes`.
-4. **Правильный адрес записи.** Скетч при старте печатает свой раздел:
-   `[FS] раздел 'spiffs': адрес 0x610000, размер 10354688 байт` — адрес в `write-flash`
-   должен совпадать. Если размер другой, плата собрана с другой таблицей разделов:
-   залейте скетч ещё раз (в проекте лежит `partitions.csv`) и повторите заливку FS.
-5. **Расширение и папка:** файлы — `*.nes`, папка — `roms` (строчными). Если папки нет,
-   скетч ищет ромы в корне LittleFS.
+1. **Was the LittleFS image flashed at all?** The `data/` folder on your PC is only a
+   template: **uploading the sketch (Ctrl+U) does not flash the image**. The log of an
+   unflashed image looks like this: `[FS] /: файлов 0, каталогов 0` (0 files, 0 folders)
+   and `[FS] /roms — каталог не найден` (folder not found).
+2. **Did the image build stop at a long name?** The `mklittlefs` output must not contain
+   `error adding file!` (the 32-character limit).
+3. **What is really inside the image:** `& $mk -l -p 256 -b 4096 -s 10354688 littlefs.bin` —
+   it should list `/roms/...nes` entries.
+4. **Correct write address.** At startup the sketch prints its own partition:
+   `[FS] раздел 'spiffs': адрес 0x610000, размер 10354688 байт` (partition, address,
+   size) — the address in `write-flash` must match. If the size differs, the board was
+   built with another partition table: upload the sketch once more (the project ships
+   `partitions.csv`) and repeat the FS upload.
+5. **Extension and folder:** files are `*.nes`, the folder is `roms` (lowercase). If the
+   folder is missing, the sketch looks for ROMs in the LittleFS root.
 
-## Сборка
+## Building
 
-Сборка в IDE: **Проверить** (Ctrl+R) / **Загрузить** (Ctrl+U). Проект — один скетч
-`DendyGO.ino` + модули `.h/.cpp` в той же папке, `src/`-структура и `#include`-пути не
-нужны.
+In the IDE: **Verify** (Ctrl+R) / **Upload** (Ctrl+U). The project is one sketch
+`DendyGO.ino` plus `.h/.cpp` modules in the same folder; no `src/` structure and no
+`#include` paths are needed.
 
 ```text
 Скетч использует 583227 байт (18%) памяти устройства. Всего доступно 3145728 байт.
@@ -297,90 +311,93 @@ Upload» (`arduino-esp32littlefs-plugin`) и PlatformIO (`pio run -t uploadfs` �
 212004 байт для локальных переменных. Максимум: 327680 байт.
 ```
 
-Основные ручки в `DendyConfig.h`: `DENDY_CORE_IRAM` и `DENDY_CART_IRAM` (горячий код
-ядра и активные окна банков картриджа во внутренней SRAM — заметно ускоряют эмуляцию;
-кэш банков занимает 40 КБ SRAM, при нехватке верните `DENDY_CART_IRAM 0`),
-`DENDY_DEBUG_SERIAL` / `DENDY_BTN_TRACE` / `DENDY_ROM_TRACE` / `DENDY_VIDEO_TRACE`
-(лог и трассы — для игры 0), `DENDY_LCD_TEST` (тест дисплея без эмулятора),
-`DENDY_COLOR_ORDER` (порядок цветов; на этой плате верный режим 1 — он и стоит по
-умолчанию), `DENDY_LOOP_STACK` (стек задачи `loop()`, 16 КБ).
+(That is the Arduino IDE output with a Russian UI: 583227 bytes = 18 % of the flash,
+115676 bytes = 35 % of the static RAM.)
 
-## Диагностика (кратко)
+Main knobs in `DendyConfig.h`: `DENDY_CORE_IRAM` and `DENDY_CART_IRAM` (hot core code and
+the active cartridge bank windows in internal SRAM — they speed the emulation up
+noticeably; the bank cache takes 40 KB of SRAM, so set `DENDY_CART_IRAM 0` if you run
+short on memory), `DENDY_DEBUG_SERIAL` / `DENDY_BTN_TRACE` / `DENDY_ROM_TRACE` /
+`DENDY_VIDEO_TRACE` (log and traces — keep them 0 for playing), `DENDY_LCD_TEST` (display
+test without the emulator), `DENDY_COLOR_ORDER` (color order; mode 1 is correct on this
+board and is the default), `DENDY_LOOP_STACK` (the stack of the `loop()` task, 16 KB).
 
-Лог идёт в Serial на 115200 (`USB CDC On Boot = Enabled`). Флаги в `DendyConfig.h`:
+## Troubleshooting (short)
+
+The log goes to Serial at 115200 (`USB CDC On Boot = Enabled`). Flags in `DendyConfig.h`:
 
 ```c
-#define DENDY_DEBUG_SERIAL 1   // вообще выводить лог в Serial (115200)
-#define DENDY_BTN_TRACE    0   // скан I2C, дамп регистров SX1509, каждое нажатие
-#define DENDY_ROM_TRACE    1   // листинг LittleFS, раздел под FS, причина пропуска
-#define DENDY_VIDEO_TRACE  0   // строки [VID]: PPU, маппер, трасса PC, ASCII-кадр
+#define DENDY_DEBUG_SERIAL 1   // log to Serial at all (115200)
+#define DENDY_BTN_TRACE    0   // I2C scan, SX1509 register dump, every button press
+#define DENDY_ROM_TRACE    1   // LittleFS listing, FS partition, reason for skipping
+#define DENDY_VIDEO_TRACE  0   // [VID] lines: PPU, mapper, PC trace, ASCII frame
 ```
 
-`DENDY_BTN_TRACE = 1` — это диагностика, а не игровой режим: на каждое нажатие
-печатается ~130 символов, и на 115200 бод `Serial.printf()` может подтормаживать
-игровой цикл. Состояние кнопок и так видно в меню.
+`DENDY_BTN_TRACE = 1` is a diagnostic mode, not a gaming one: every press prints about
+130 characters, and at 115200 baud `Serial.printf()` can slow the game loop down. Button
+state is visible in the menu anyway.
 
-| Симптом | Что проверить |
+| Symptom | What to check |
 |---|---|
-| `LittleFS error / check partition scheme` | в папке скетча должен лежать `partitions.csv` из проекта либо выбрана схема разделов с SPIFFS |
-| `[FS] LittleFS: свободно … 0 КБ` | раздел смонтирован, но пуст — залейте `data/` (см. «Как залить ромы») |
-| `[ROM] папка /roms не найдена` | ромы в `data/roms/*.nes`, папка именно `roms` (строчными) |
-| `[ROM] нет памяти в PSRAM` | в меню платы: **OPI PSRAM**, Flash Size = 16MB |
-| `[I2C2] НИКОГО не найдено` / `[SX1509] нет отклика` | питание 3.3 В, SDA/SCL, подтяжки 4.7 кОм, общий GND, A0/A1 на GND |
-| Все кнопки «нажаты» (`pad=0xFF`), `PullUp=0000…` | подтяжки выводов не включены — в этой прошивке включаются сами; проверьте монтаж и `SX_PIN_*` |
-| Кнопки «залипают»/дребезжат | увеличьте `SX1509_DEBOUNCE_MS` (8 → 16 мс) |
-| `[BTN] подсказка: … INT (GPIO3) ни разу не сработало` | провод INT не подключён: кнопки работают (опрос каждый кадр, ~16 мс), но с INT опрос идёт только по событию |
-| Чёрный экран, подсветки нет | GPIO подсветки (21), `DISPLAY_BRIGHTNESS`, `DISPLAY_INVERT`, `DISPLAY_OFFSET_X/Y`, `DISPLAY_BGR`; кнопка 8 возвращает яркость (при включении 70 %) |
-| Картинка «снежит»/глитчи | снизьте `DISPLAY_FREQ_WRITE` 120 → 80 → 40 МГц |
-| Непонятно, кто виноват — дисплей или ядро | включите `DENDY_LCD_TEST 1` (тест дисплея без эмулятора, см. «Технические заметки») |
-| Цвета не те (небо зелёное или розовое вместо сине-голубого) | удерживайте **SELECT** и жмите **Влево/Вправо**, подберите `DENDY_COLOR_ORDER` глазами (на этой плате — 1) |
-| `Guru Meditation … Stack canary watchpoint triggered (loopTask)` | переполнение стека задачи `loop()`; стек поднят до `DENDY_LOOP_STACK` = 16 КБ, при повторе увеличьте |
-| «Sketch too big» при компиляции | выберите схему разделов «16M Flash (3MB APP/9.9MB FATFS)» |
-| Игра идёт медленнее 60 Гц (`fps emu` < 60) | `Tools → Debug Level = None`, `CPU Frequency = 240 MHz`; в логе смотрите `emu N ms/kadr`, `fps emu`, `na ekran`, `otdano` и `[GAME] profil` (время внутри эмулятора) |
+| `LittleFS error / check partition scheme` | the sketch folder must contain this project's `partitions.csv`, or a partition scheme with SPIFFS must be selected |
+| `[FS] LittleFS: свободно … 0 КБ` ("0 KB free") | the partition is mounted but empty — flash `data/` (see "How to upload ROMs") |
+| `[ROM] папка /roms не найдена` ("folder not found") | ROMs go to `data/roms/*.nes`, and the folder must be named `roms` (lowercase) |
+| `[ROM] нет памяти в PSRAM` ("no PSRAM memory") | in the board menu: **OPI PSRAM**, Flash Size = 16MB |
+| `[I2C2] НИКОГО не найдено` / `[SX1509] нет отклика` ("nobody found" / "no response") | 3.3 V power, SDA/SCL, 4.7 kΩ pull-ups, common GND, A0/A1 to GND |
+| All buttons read as "pressed" (`pad=0xFF`), `PullUp=0000…` | pin pull-ups are not enabled — this firmware enables them itself; check the wiring and `SX_PIN_*` |
+| Buttons "stick" or bounce | increase `SX1509_DEBOUNCE_MS` (8 → 16 ms) |
+| `[BTN] подсказка: … INT (GPIO3) ни разу не сработало` ("INT never fired") | the INT wire is not connected: the buttons still work (polled every frame, ~16 ms), but with INT they are polled on an event only |
+| Black screen, no backlight | backlight GPIO (21), `DISPLAY_BRIGHTNESS`, `DISPLAY_INVERT`, `DISPLAY_OFFSET_X/Y`, `DISPLAY_BGR`; button 8 restores the brightness (70 % at power-up) |
+| The picture is "snowy"/glitchy | lower `DISPLAY_FREQ_WRITE` 120 → 80 → 40 MHz |
+| Unclear whether the display or the core is at fault | enable `DENDY_LCD_TEST 1` (display test without the emulator, see "Technical notes") |
+| Wrong colors (sky green or pink instead of blue-cyan) | hold **SELECT** and press **Left/Right** to pick `DENDY_COLOR_ORDER` by eye (1 on this board) |
+| `Guru Meditation … Stack canary watchpoint triggered (loopTask)` | `loop()` stack overflow; the stack is raised to `DENDY_LOOP_STACK` = 16 KB, increase it if this happens again |
+| "Sketch too big" while compiling | select the "16M Flash (3MB APP/9.9MB FATFS)" partition scheme |
+| The game runs slower than 60 Hz (`fps emu` < 60) | `Tools → Debug Level = None`, `CPU Frequency = 240 MHz`; in the log look at `emu N ms/kadr`, `fps emu`, `na ekran`, `otdano` and `[GAME] profil` (time inside the emulator) |
 
-## Технические заметки
+## Technical notes
 
-Всё «глубокое» вынесено в [`docs/TECH_NOTES.md`](docs/TECH_NOTES.md), чтобы README
-остался коротким:
+All the deep material lives in [`docs/TECH_NOTES.md`](docs/TECH_NOTES.md) (in Russian) so
+that this README stays short:
 
-* тайминги кадра, выбор региона внутри ядра (NTSC/PAL) и «почему не 60,0988 кадра/с»;
-* звук: размеры буферов («почему музыка рвётся»), «пустой звук», первый звук после
-  включения, `DENDY_MAX_FRAME_SKIP`, `DENDY_APU_ANTIALIAS`, `DENDY_APU_LOWPASS_HZ`,
-  раскладка шагов frame counter (`$4017`), `AUDIO_ADAPTIVE_RATE`,
+* frame timing, in-core region switching (NTSC/PAL) and "why not 60.0988 fps";
+* audio: buffer sizes ("why the music stutters"), "silent audio", the first sound after
+  power-up, `DENDY_MAX_FRAME_SKIP`, `DENDY_APU_ANTIALIAS`, `DENDY_APU_LOWPASS_HZ`, the
+  frame-counter step layout (`$4017`), `AUDIO_ADAPTIVE_RATE`,
   `DENDY_PUSH_EVERY_N_FRAMES`;
-* диагностика: полный лог кнопок/файловой системы, полная таблица симптомов,
-  `DENDY_VIDEO_TRACE` (тракт картинки, порядок цветов `DENDY_COLOR_ORDER`);
-* тест дисплея без эмулятора `DENDY_LCD_TEST` (9 конфигураций панелей);
-* внутреннее устройство: видео/звук/кнопки/меню, память (SRAM против PSRAM), стек.
+* diagnostics: the full button/filesystem log, the full symptom table,
+  `DENDY_VIDEO_TRACE` (video path, color order `DENDY_COLOR_ORDER`);
+* the display test without the emulator `DENDY_LCD_TEST` (9 panel configurations);
+* internals: video/audio/buttons/menu, memory (SRAM vs PSRAM), stack.
 
-## Лицензия
+## License
 
-Файл `LICENSE` в проекте пока не добавлен. Перед публикацией стоит выбрать лицензию:
-**MIT** (как у используемых библиотек) или **GPL-3.0**, если хотите, чтобы производные
-прошивки тоже оставались открытыми.
+The project has no `LICENSE` file yet. Before publishing it is worth picking a license:
+**MIT** (like the libraries used here) or **GPL-3.0** if you want derived firmware to stay
+open as well.
 
-## Благодарности и источники
+## Credits and sources
 
-Ядро эмулятора (6502 + PPU 2C02 + APU 2A03 + мапперы), меню, звук и вывод на экран
-написаны **с нуля**: это не порт, не форк и не перевод чужого эмулятора, сторонний код
-ядра не использовался. Часть решений подсказана документацией и чужим опытом —
-спасибо этим источникам.
+The emulator core (6502 + 2C02 PPU + 2A03 APU + mappers), the menu, audio and the video
+output are written **from scratch**: this is not a port, not a fork and not a translation
+of somebody else's emulator, no third-party core code was used. Some decisions were guided
+by documentation and other people's experience — thanks to these sources.
 
-Библиотеки и внешние данные:
+Libraries and external data:
 
-* **LovyanGFX** (автор lovyan03, MIT) — драйвер ST7789 и ШИМ подсветки;
-* **SparkFun SX1509 I/O Expander** (SparkFun Electronics, MIT) — расширитель кнопок;
-* **arduino-esp32** и **ESP-IDF** — I2S, LittleFS, задачи FreeRTOS, USB CDC;
-* **палитра 2C02** — открытая таблица из сети (первоисточник не подтверждён).
+* **LovyanGFX** (by lovyan03, MIT) — ST7789 driver and backlight PWM;
+* **SparkFun SX1509 I/O Expander** (SparkFun Electronics, MIT) — button expander;
+* **arduino-esp32** and **ESP-IDF** — I2S, LittleFS, FreeRTOS tasks, USB CDC;
+* **2C02 palette** — an open table found online (the original source could not be confirmed).
 
-Знания о «железе» NES:
+NES hardware knowledge:
 
-* **NESdev Wiki** (`wiki.nesdev.org`) и **форум nesdev.org** — основной источник:
-  тайминги PPU (rendering, scrolling, sprite-0 hit), раскладка шагов frame counter и
-  огибающие APU, поведение мапперов, палитра;
-* **FCEUX** — поведенческий референс (например, как он обходится без submapper при
-  записи в `$9000-$9FFF` у mapper 71). Код FCEUX не копировался: сверялось только
-  поведение.
+* **NESdev Wiki** (`wiki.nesdev.org`) and the **nesdev.org forum** — the main source:
+  PPU timing (rendering, scrolling, sprite-0 hit), the frame-counter step layout and APU
+  envelopes, mapper behaviour, the palette;
+* **FCEUX** — a behavioural reference (for example, how it copes without a submapper when
+  mapper 71 writes to `$9000-$9FFF`). No FCEUX code was copied: only behaviour was
+  compared.
 
-Ромы в репозиторий не входят (чужие авторские права) — папка `data/roms` только
-заготовка, см. `.gitignore`.
+ROMs are not part of the repository (third-party copyright) — the `data/roms` folder is a
+placeholder only, see `.gitignore`.
