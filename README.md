@@ -2,8 +2,7 @@
 
 <img width="2000" height="1500" alt="Consol3" src="https://github.com/user-attachments/assets/88b0bcd7-e1c9-4000-818c-3164782d0da6" />
 
-A handheld NES/Dendy emulator: the core (6502 CPU + 2C02 PPU + 2A03 APU + mappers) is
-written **from scratch**, no third-party emulator code was used. ROMs (`.nes`) live in
+A handheld NES/Dendy emulator: the core (6502 CPU + 2C02 PPU + 2A03 APU + mappers). ROMs (`.nes`) live in
 LittleFS in the internal flash (no microSD card needed), the frame goes to an ST7789 SPI
 display, sound goes to a MAX98357 I2S DAC, and the buttons are read through an SX1509 I/O
 expander.
